@@ -4,13 +4,16 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"time"
 
-	"github.com/hashicorp/http-echo/version"
+	"github.com/ddreier/http-echo/version"
 )
 
 var (
@@ -46,10 +49,21 @@ func main() {
 
 	// Flag gets printed as a page
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", httpLog(stdoutW, withAppHeaders(httpEcho(*textFlag))))
+	mux.HandleFunc("/", promhttp.InstrumentHandlerCounter(
+		promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "echo_requests_total",
+				Help: "Total number of requests by response code.",
+			},
+			[]string{"code"},
+		),
+		httpLog(stdoutW, withAppHeaders(httpEcho(*textFlag))),
+	))
 
 	// Health endpoint
 	mux.HandleFunc("/health", withAppHeaders(httpHealth()))
+	// Metrics
+	mux.Handle("/metrics", promhttp.Handler())
 
 	server := &http.Server{
 		Addr:    *listenFlag,
